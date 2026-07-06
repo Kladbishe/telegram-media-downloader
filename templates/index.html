@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telegram Media Downloader</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --border:    rgba(255,255,255,0.07);
+      --text:      #e6edf3;
+      --muted:     #7d8590;
+      --accent:    #2CA5E0;
+      --accent-lo: rgba(44,165,224,0.12);
+      --success:   #3fb950;
+      --error:     #f85149;
+    }
+    html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased; }
+    .app { position: relative; width: 100%; height: 100vh; overflow: hidden; }
+
+    /* ── Init overlay ── */
+    #init-overlay {
+      position: fixed; inset: 0; background: var(--bg); z-index: 900;
+      display: none; align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+      transition: opacity .3s;
+    }
+    #init-overlay .spin { width: 28px; height: 28px; border-width: 3px; border-top-color: var(--accent); }
+
+    /* ── Screens ── */
+    .screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 60px 20px 32px;
+      transform: translateX(100%); opacity: 0; pointer-events: none;
+      transition: transform .44s cubic-bezier(.4,0,.2,1), opacity .32s ease;
+      overflow-y: auto; overscroll-behavior: contain;
+    }
+    .screen.active { transform: translateX(0);    opacity: 1; pointer-events: all; }
+    .screen.past   { transform: translateX(-100%); opacity: 0; }
+
+    /* ── Lang toggle ── */
+    .home-btn {
+      position: fixed; top: 14px; left: 16px; z-index: 300;
+      display: none; align-items: center; gap: 6px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 100px;
+      padding: 8px 16px; cursor: pointer; color: var(--muted);
+      font-size: 13px; font-weight: 600; font-family: inherit;
+      transition: color .2s, border-color .2s;
+    }
+    .home-btn:hover { color: var(--text); border-color: rgba(255,255,255,.2); }
+
+    .lang-wrap {
+      position: fixed; top: 16px; right: 16px; z-index: 300;
+      display: flex; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 100px; padding: 3px; gap: 2px;
+    }
+    .lang-btn {
+      background: transparent; border: none; color: var(--muted);
+      font-size: 12px; font-weight: 700; letter-spacing: .06em;
+      padding: 7px 14px; border-radius: 100px; cursor: pointer;
+      transition: background .2s, color .2s, box-shadow .2s;
+    }
+    .lang-btn.active { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(44,165,224,.4); }
+
+    /* ── Step dots ── */
+    .dots-wrap {
+      position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 300; display: flex; gap: 7px; align-items: center;
+      opacity: 0; pointer-events: none; transition: opacity .3s;
+    }
+    .dots-wrap.visible { opacity: 1; }
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.1);
+      transition: background .3s, transform .3s, width .3s;
+    }
+    .dot.active { background: var(--accent); transform: scale(1.3); width: 20px; border-radius: 4px; }
+    .dot.done   { background: rgba(44,165,224,.35); }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 32px 32px 28px;
+      width: 100%; max-width: 500px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.5);
+    }
+    .back-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      color: var(--muted); font-size: 13px; cursor: pointer;
+      background: none; border: none; padding: 0; margin-bottom: 20px;
+      transition: color .15s; font-family: inherit;
+    }
+    .back-btn:hover { color: var(--text); }
+    .screen-title { font-size: 21px; font-weight: 700; margin-bottom: 7px; }
+    .screen-sub   { font-size: 13.5px; color: var(--muted); margin-bottom: 24px; line-height: 1.55; }
+
+    /* ── Fields ── */
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block; font-size: 11px; font-weight: 700; color: var(--muted);
+      letter-spacing: .07em; text-transform: uppercase; margin-bottom: 6px;
+    }
+    input[type="text"], input[type="number"], input[type="tel"], input[type="password"] {
+      width: 100%; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px 14px; font-size: 14px; color: var(--text);
+      outline: none; transition: border-color .2s, box-shadow .2s; font-family: inherit;
+    }
+    input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(44,165,224,.15); }
+    .row { display: flex; gap: 12px; }
+    .row .field { flex: 1; }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      width: 100%; padding: 13px; background: var(--accent); color: #fff; border: none;
+      border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: background .15s, transform .1s, box-shadow .2s; font-family: inherit;
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .btn-primary:hover:not(:disabled) { background: #1c9cd6; box-shadow: 0 6px 24px rgba(44,165,224,.45); transform: translateY(-1px); }
+    .btn-primary:active:not(:disabled) { transform: scale(.98) translateY(0); }
+    .btn-primary:disabled { background: #1a2d42; color: #35526e; cursor: not-allowed; }
+
+    .btn-outline {
+      width: 100%; padding: 11px; background: transparent;
+      color: var(--accent); border: 1px solid rgba(44,165,224,.28);
+      border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: background .15s; font-family: inherit; margin-top: 9px;
+    }
+    .btn-outline:hover { background: var(--accent-lo); }
+
+    .btn-danger {
+      width: 100%; padding: 11px; background: transparent;
+      color: var(--error); border: 1px solid rgba(248,81,73,.28);
+      border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: background .15s; font-family: inherit; margin-top: 9px;
+    }
+    .btn-danger:hover { background: rgba(248,81,73,.1); }
+
+    .link-btn {
+      display: block; text-align: center; color: var(--muted); font-size: 13px;
+      cursor: pointer; background: none; border: none; margin-top: 12px;
+      transition: color .15s; font-family: inherit;
+    }
+    .link-btn:hover { color: var(--text); }
+
+    .toggles { display: flex; gap: 10px; margin-bottom: 20px; }
+    .tgl-btn {
+      flex: 1; padding: 10px 8px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--muted); font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all .17s;
+      display: flex; align-items: center; justify-content: center; gap: 6px; font-family: inherit;
+    }
+    .tgl-btn.on { border-color: var(--accent); background: var(--accent-lo); color: #7eccea; }
+
+    /* ═══ WELCOME ═══ */
+    .welcome-inner { text-align: center; max-width: 360px; }
+    .logo-wrap {
+      width: 96px; height: 96px; margin: 0 auto 28px; position: relative;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ring { position: absolute; border-radius: 50%; border: 2px solid rgba(44,165,224,.22); animation: ring-pulse 3s ease-in-out infinite; }
+    .ring-1 { inset: -10px; }
+    .ring-2 { inset: -22px; border-color: rgba(44,165,224,.1); animation-delay: .7s; }
+    .ring-3 { inset: -36px; border-color: rgba(44,165,224,.05); animation-delay: 1.4s; }
+    @keyframes ring-pulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.04); opacity: .5; } }
+    .logo-svg { animation: logo-float 4s ease-in-out infinite; }
+    @keyframes logo-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    .welcome-title {
+      font-size: 26px; font-weight: 800; margin-bottom: 11px;
+      background: linear-gradient(140deg, #e6edf3 0%, #90cce8 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .welcome-desc { font-size: 15px; color: var(--muted); line-height: 1.65; margin-bottom: 34px; }
+    .btn-welcome {
+      display: inline-block; padding: 14px 48px; background: var(--accent); color: #fff; border: none;
+      border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer;
+      transition: background .15s, box-shadow .2s, transform .1s; font-family: inherit;
+      box-shadow: 0 4px 20px rgba(44,165,224,.35);
+    }
+    .btn-welcome:hover { background: #1c9cd6; box-shadow: 0 8px 32px rgba(44,165,224,.55); transform: translateY(-2px); }
+    .social-links {
+      position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 22px; z-index: 300;
+    }
+    .social-link { color: rgba(255,255,255,.22); transition: color .2s; display: flex; }
+    .social-link:hover { color: rgba(255,255,255,.6); }
+
+    /* ═══ GUIDE ═══ */
+    .guide-note {
+      background: rgba(44,165,224,.08); border: 1px solid rgba(44,165,224,.2);
+      border-radius: 10px; padding: 10px 13px; font-size: 12.5px; color: #7ec8ec;
+      margin-bottom: 18px; display: flex; gap: 9px; line-height: 1.45;
+    }
+    .guide-steps { list-style: none; margin-bottom: 22px; }
+    .guide-step {
+      display: flex; gap: 14px; align-items: flex-start;
+      padding: 12px 0; border-bottom: 1px solid var(--border);
+    }
+    .guide-step:last-child { border-bottom: none; padding-bottom: 0; }
+    .step-num {
+      width: 27px; height: 27px; flex-shrink: 0; border-radius: 50%;
+      background: var(--accent-lo); border: 1.5px solid rgba(44,165,224,.35); color: var(--accent);
+      font-size: 12px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    }
+    .step-title { font-size: 13.5px; font-weight: 600; margin-bottom: 2px; }
+    .step-desc  { font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+    .btn-tg-open {
+      width: 100%; padding: 13px; margin-bottom: 9px;
+      background: linear-gradient(135deg, #229ED9 0%, #1a7fbf 100%);
+      color: #fff; border: none; border-radius: 12px;
+      font-size: 14.5px; font-weight: 700; cursor: pointer;
+      transition: opacity .15s, box-shadow .2s; font-family: inherit;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      box-shadow: 0 4px 18px rgba(34,158,217,.4); text-decoration: none;
+    }
+    .btn-tg-open:hover { opacity: .9; box-shadow: 0 6px 26px rgba(34,158,217,.55); }
+
+    /* ═══ CREDENTIALS ═══ */
+    .lock-note {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 12px; color: var(--muted); margin-top: 8px; margin-bottom: 20px;
+    }
+
+    /* ═══ AUTH SCREEN ═══ */
+    .auth-phase { transition: opacity .2s, transform .2s; }
+    .auth-sent-note {
+      display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+      background: rgba(63,185,80,.08); border: 1px solid rgba(63,185,80,.2);
+      border-radius: 10px; font-size: 13px; color: var(--success); margin-bottom: 16px;
+    }
+    .auth-error {
+      background: rgba(248,81,73,.08); border: 1px solid rgba(248,81,73,.2);
+      border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--error);
+      margin-bottom: 12px; line-height: 1.4;
+    }
+    .otp-input {
+      width: 100%; background: var(--bg); border: 2px solid var(--accent);
+      border-radius: 12px; padding: 16px; font-size: 32px; font-weight: 700; color: var(--text);
+      text-align: center; letter-spacing: 10px; outline: none;
+      font-family: "SF Mono","Fira Code", monospace;
+      transition: box-shadow .2s;
+    }
+    .otp-input:focus { box-shadow: 0 0 0 3px rgba(44,165,224,.2); }
+
+    /* ═══ CHAT PICKER ═══ */
+    .cp-box { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; background: var(--bg); }
+    .cp-loading {
+      display: flex; align-items: center; gap: 10px;
+      padding: 16px 14px; color: var(--muted); font-size: 13px;
+    }
+    .cp-err-msg {
+      font-size: 12px; color: var(--error); padding: 10px 12px;
+      background: rgba(248,81,73,.08); border-radius: 8px; margin: 12px 14px 10px;
+    }
+    .cp-search-row {
+      display: flex; align-items: center; gap: 9px;
+      padding: 10px 13px; border-bottom: 1px solid var(--border);
+      background: var(--bg); position: sticky; top: 0; z-index: 1;
+    }
+    .cp-search-row svg { flex-shrink: 0; color: var(--muted); }
+    .cp-search-input {
+      flex: 1; background: transparent; border: none;
+      font-size: 13.5px; color: var(--text); outline: none; font-family: inherit;
+    }
+    .cp-search-input::placeholder { color: var(--muted); }
+    .chat-list { max-height: 220px; overflow-y: auto; }
+    .chat-item {
+      display: flex; align-items: center; gap: 11px; padding: 8px 13px; cursor: pointer;
+      transition: background .1s; border-bottom: 1px solid rgba(255,255,255,0.035);
+    }
+    .chat-item:last-child { border-bottom: none; }
+    .chat-item:hover    { background: rgba(255,255,255,0.04); }
+    .chat-item.selected { background: var(--accent-lo); }
+    .chat-av {
+      width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: rgba(255,255,255,.9);
+      overflow: hidden; position: relative;
+    }
+    .chat-av img {
+      position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
+    }
+    .chat-av-letter { position: relative; z-index: 1; }
+    .chat-info { flex: 1; min-width: 0; }
+    .ci-name { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ci-meta { font-size: 11.5px; color: var(--muted); }
+    .chat-kind { flex-shrink: 0; display: flex; align-items: center; opacity: .4; }
+    .chat-check { color: var(--accent); flex-shrink: 0; }
+    .chat-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 13px; }
+
+    .cp-sel-bar {
+      display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+      background: var(--accent-lo); border: 1px solid rgba(44,165,224,.2);
+      border-radius: 10px; margin-bottom: 14px; font-size: 13px;
+    }
+    .cp-sel-label { color: var(--muted); flex-shrink: 0; }
+    .cp-sel-name  { color: var(--text); font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .cp-change-btn {
+      flex-shrink: 0; background: none; border: 1px solid rgba(44,165,224,.3);
+      color: var(--accent); font-size: 11px; font-weight: 600; padding: 3px 9px;
+      border-radius: 6px; cursor: pointer; transition: background .15s; font-family: inherit;
+    }
+    .cp-change-btn:hover { background: var(--accent-lo); }
+
+    /* Folder row */
+    .folder-row { display: flex; gap: 8px; }
+    .folder-row input { flex: 1; }
+    .btn-browse {
+      padding: 0 14px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; color: var(--muted); font-size: 13px; cursor: pointer;
+      white-space: nowrap; transition: color .15s, border-color .15s; font-family: inherit;
+    }
+    .btn-browse:hover { color: var(--text); border-color: rgba(255,255,255,.2); }
+
+    /* ═══ DATE RANGE ═══ */
+    .date-range {
+      display: flex; align-items: stretch;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    }
+    .dr-part {
+      flex: 1; display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; cursor: pointer; transition: background .15s;
+    }
+    .dr-part:hover { background: rgba(255,255,255,.04); }
+    .dr-part.dr-on { background: var(--accent-lo); }
+    .dr-divider { width: 1px; background: var(--border); flex-shrink: 0; }
+    .dr-icon { color: var(--muted); flex-shrink: 0; }
+    .dr-label { font-size: 13px; }
+    .dr-label.ph { color: var(--muted); }
+    .dr-label.val { color: var(--text); font-weight: 500; }
+
+    /* Calendar popup */
+    .cal-popup {
+      position: fixed; z-index: 600;
+      background: var(--surface); border: 1px solid rgba(255,255,255,.1);
+      border-radius: 14px; padding: 16px 14px 12px;
+      box-shadow: 0 24px 64px rgba(0,0,0,.75); width: 252px;
+    }
+    .cal-head {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+    }
+    .cal-arrow {
+      background: none; border: none; color: var(--muted); font-size: 17px; line-height: 1;
+      padding: 5px 10px; border-radius: 7px; cursor: pointer;
+      transition: color .12s, background .12s; font-family: inherit;
+    }
+    .cal-arrow:hover { color: var(--text); background: rgba(255,255,255,.07); }
+    .cal-title { font-size: 13.5px; font-weight: 700; color: var(--text); }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+    .cal-dow {
+      font-size: 10px; font-weight: 700; color: var(--muted);
+      text-align: center; padding: 3px 0 6px; letter-spacing: .04em;
+    }
+    .cal-d {
+      font-size: 12.5px; text-align: center; padding: 7px 0; border-radius: 6px;
+      cursor: pointer; color: var(--text); transition: background .1s, color .1s; user-select: none;
+    }
+    .cal-d:hover:not(.cal-empty) { background: rgba(255,255,255,.09); }
+    .cal-d.cal-today { color: var(--accent); font-weight: 700; }
+    .cal-d.cal-sel { background: var(--accent) !important; color: #fff; font-weight: 600; }
+    .cal-d.cal-in { background: var(--accent-lo); border-radius: 0; }
+    .cal-d.cal-rs { background: var(--accent); color: #fff; border-radius: 6px 0 0 6px; }
+    .cal-d.cal-re { background: var(--accent); color: #fff; border-radius: 0 6px 6px 0; }
+    .cal-d.cal-dim { color: rgba(255,255,255,.18); }
+    .cal-d.cal-empty { pointer-events: none; }
+    .cal-foot {
+      display: flex; gap: 7px; margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--border);
+    }
+    .cal-foot button {
+      flex: 1; padding: 8px 6px; border-radius: 8px; font-size: 12px;
+      cursor: pointer; font-family: inherit; transition: background .13s, color .13s;
+    }
+    .cal-reset { background: none; border: 1px solid var(--border); color: var(--muted); }
+    .cal-reset:hover { color: var(--text); border-color: rgba(255,255,255,.2); }
+    .cal-ok { background: var(--accent-lo); border: 1px solid rgba(44,165,224,.3); color: var(--accent); font-weight: 600; }
+    .cal-ok:hover { background: rgba(44,165,224,.22); }
+
+    /* ═══ PROGRESS ═══ */
+    .prog-stats { display: flex; gap: 11px; margin-bottom: 10px; }
+    .prog-bar-box { margin-bottom: 12px; }
+    .prog-bar-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+    .prog-bar-track { height: 5px; border-radius: 3px; background: rgba(255,255,255,.1); overflow: hidden; }
+    .prog-bar-fill  { height: 100%; border-radius: 3px; background: var(--accent); width: 0; transition: width .4s ease; }
+    .stat { flex: 1; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; text-align: center; }
+    .stat-val { font-size: 28px; font-weight: 800; color: var(--accent); line-height: 1; }
+    .stat-lbl { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    #log {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+      height: 240px; overflow-y: auto; padding: 11px 13px;
+      font-family: "SF Mono","Fira Mono", monospace; font-size: 11.5px; line-height: 1.8; margin-bottom: 13px;
+    }
+    .log-line.done { color: var(--success); }
+    .log-line.info { color: var(--muted); }
+    .log-line.err  { color: var(--error); }
+    .log-line.prog { color: #e2b040; }
+    .log-line.fin  { color: #b39ddb; font-weight: 700; }
+    @keyframes dl-pulse { 0%,100%{opacity:1} 50%{opacity:.45} }
+    .log-line.prog { color: #e2b040; animation: dl-pulse 1.4s ease-in-out infinite; }
+    .log-line.prog.has-pct { animation: none; }
+    #finish-box {
+      background: rgba(63,185,80,.08); border: 1px solid rgba(63,185,80,.25);
+      border-radius: 10px; padding: 12px 15px; font-size: 13px; color: var(--success);
+      margin-bottom: 13px; display: none;
+    }
+    #finish-box.visible { display: block; animation: pop-in .35s cubic-bezier(.34,1.56,.64,1) both; }
+    @keyframes pop-in { from { opacity:0; transform:scale(.93); } to { opacity:1; transform:scale(1); } }
+    #finish-path { font-family: "SF Mono",monospace; font-size: 11px; margin-top: 5px; opacity:.75; word-break: break-all; }
+
+    /* ── Scan hint ── */
+    #scan-hint {
+      display: none; margin-bottom: 13px;
+      background: linear-gradient(135deg, rgba(224,180,64,.07) 0%, rgba(224,150,40,.04) 100%);
+      border: 1px solid rgba(224,180,64,.22); border-radius: 12px;
+      padding: 14px 16px; animation: hint-in .4s cubic-bezier(.34,1.4,.64,1) both;
+    }
+    @keyframes hint-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+    #scan-hint.visible { display: flex; gap: 13px; align-items: flex-start; }
+    .sh-icon { flex-shrink: 0; margin-top: 1px; color: #e0b440; opacity: .85; }
+    .sh-body { flex: 1; min-width: 0; }
+    .sh-main { font-size: 13px; font-weight: 600; color: #e8c96a; margin-bottom: 4px; line-height: 1.4; }
+    .sh-sub  { font-size: 12px; color: rgba(224,180,64,.6); line-height: 1.5; }
+
+    /* Spinner */
+    .spin {
+      display: inline-block; width: 14px; height: 14px; flex-shrink: 0;
+      border: 2px solid rgba(255,255,255,.15); border-top-color: var(--accent);
+      border-radius: 50%; animation: sp .7s linear infinite;
+    }
+    @keyframes sp { to { transform: rotate(360deg); } }
+
+    /* Lang transition */
+    .t { transition: opacity .14s ease, transform .14s ease; }
+    .lang-out .t { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+  </style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <div id="init-overlay">
+    <div class="spin"></div>
+    <div style="font-size:13px;color:var(--muted)" class="t" data-key="init.connecting"></div>
+  </div>
+
+  <button class="home-btn" id="btn-home" onclick="goHome()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    <span class="t" data-key="nav.home"></span>
+  </button>
+
+  <div class="lang-wrap">
+    <button class="lang-btn active" id="btn-ru" onclick="setLang('ru')">RU</button>
+    <button class="lang-btn"        id="btn-en" onclick="setLang('en')">EN</button>
+  </div>
+
+  <div class="dots-wrap" id="dots">
+    <div class="dot" id="dot-0"></div>
+    <div class="dot" id="dot-1"></div>
+    <div class="dot" id="dot-2"></div>
+  </div>
+
+  <div class="social-links" id="social-fixed">
+    <a href="https://github.com/Kladbishe" target="_blank" rel="noopener" class="social-link" title="GitHub">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/></svg>
+    </a>
+    <a href="https://www.linkedin.com/in/pavelporin/" target="_blank" rel="noopener" class="social-link" title="LinkedIn">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+    </a>
+  </div>
+
+  <!-- ═══ s0 — Welcome ═══ -->
+  <div class="screen active" id="s0">
+    <div class="welcome-inner">
+      <div class="logo-wrap">
+        <div class="ring ring-3"></div><div class="ring ring-2"></div><div class="ring ring-1"></div>
+        <svg class="logo-svg" width="96" height="96" viewBox="0 0 96 96" fill="none">
+          <circle cx="48" cy="48" r="48" fill="url(#lg)"/>
+          <defs><linearGradient id="lg" x1="0" y1="0" x2="96" y2="96" gradientUnits="userSpaceOnUse"><stop stop-color="#38b8f2"/><stop offset="1" stop-color="#1a7fbf"/></linearGradient></defs>
+          <path d="M70 29 L22 46.5 l18 3.5 L51 34 40 53 l16 9 14-33Z" fill="white"/>
+          <path d="M40 53 L41.5 65 l7-7.5" fill="white" opacity=".85"/>
+        </svg>
+      </div>
+      <h1 class="welcome-title t" data-key="welcome.title"></h1>
+      <p class="welcome-desc t" data-key="welcome.desc"></p>
+      <button class="btn-welcome t" data-key="welcome.start" onclick="next()"></button>
+      <button class="link-btn t" data-key="welcome.skip" onclick="goTo(2)" style="margin-top:18px;"></button>
+      <div class="social-links" style="position:static;transform:none;margin-top:28px;justify-content:center;">
+        <a href="https://github.com/Kladbishe" target="_blank" rel="noopener" class="social-link" title="GitHub">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        </a>
+        <a href="https://www.linkedin.com/in/pavelporin/" target="_blank" rel="noopener" class="social-link" title="LinkedIn">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ s1 — Guide ═══ -->
+  <div class="screen" id="s1">
+    <div class="card">
+      <button class="back-btn" onclick="prev()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        <span class="t" data-key="nav.back"></span>
+      </button>
+      <h2 class="screen-title t" data-key="guide.title"></h2>
+      <p class="screen-sub t"   data-key="guide.desc"></p>
+      <div class="guide-note">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+        <span class="t" data-key="guide.note"></span>
+      </div>
+      <ul class="guide-steps">
+        <li class="guide-step"><div class="step-num">1</div><div><div class="step-title t" data-key="g1t"></div><div class="step-desc t" data-key="g1d"></div></div></li>
+        <li class="guide-step"><div class="step-num">2</div><div><div class="step-title t" data-key="g2t"></div><div class="step-desc t" data-key="g2d"></div></div></li>
+        <li class="guide-step"><div class="step-num">3</div><div><div class="step-title t" data-key="g3t"></div><div class="step-desc t" data-key="g3d"></div></div></li>
+        <li class="guide-step"><div class="step-num">4</div><div><div class="step-title t" data-key="g4t"></div><div class="step-desc t" data-key="g4d"></div></div></li>
+        <li class="guide-step"><div class="step-num">5</div><div><div class="step-title t" data-key="g5t"></div><div class="step-desc t" data-key="g5d"></div></div></li>
+      </ul>
+      <a href="https://my.telegram.org" target="_blank" rel="noopener" style="text-decoration:none;display:block;">
+        <button class="btn-tg-open">
+          <svg width="17" height="17" viewBox="0 0 240 240" fill="white"><path d="M120 0C53.7 0 0 53.7 0 120s53.7 120 120 120 120-53.7 120-120S186.3 0 120 0zm55.9 82.3-20.4 96.1c-1.5 6.7-5.5 8.3-11.1 5.2l-30.8-22.7-14.8 14.3c-1.6 1.6-3 3-6.2 3l2.2-31.4 57.8-52.2c2.5-2.2-.5-3.4-3.9-1.2L74.4 147l-29.9-9.4c-6.5-2-6.6-6.5 1.4-9.6l109.6-42.3c5.4-2 10.2 1.3 8.4 6.6z"/></svg>
+          <span class="t" data-key="guide.open"></span>
+        </button>
+      </a>
+      <button class="btn-outline t" data-key="guide.next" onclick="next()"></button>
+    </div>
+  </div>
+
+  <!-- ═══ s2 — Credentials ═══ -->
+  <div class="screen" id="s2">
+    <div class="card">
+      <button class="back-btn" onclick="prev()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        <span class="t" data-key="nav.back"></span>
+      </button>
+      <h2 class="screen-title t" data-key="creds.title"></h2>
+      <p class="screen-sub t"   data-key="creds.desc"></p>
+      <div class="field">
+        <label class="t" data-key="creds.id_lbl"></label>
+        <input type="number" id="api_id" data-ph="creds.id_ph" />
+      </div>
+      <div class="field">
+        <label class="t" data-key="creds.hash_lbl"></label>
+        <input type="text" id="api_hash" data-ph="creds.hash_ph" />
+      </div>
+      <div class="lock-note">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span class="t" data-key="creds.saved"></span>
+      </div>
+      <button class="btn-primary t" id="creds-next-btn" data-key="creds.next" onclick="saveCreds()" style="margin-top:20px;"></button>
+    </div>
+  </div>
+
+  <!-- ═══ s3 — Phone Auth ═══ -->
+  <div class="screen" id="s3">
+    <div class="card">
+      <button class="back-btn" onclick="prev()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 5l-7 7 7 7"/></svg>
+        <span class="t" data-key="nav.back"></span>
+      </button>
+      <h2 class="screen-title t" data-key="auth.title"></h2>
+      <p class="screen-sub t"   data-key="auth.desc"></p>
+
+      <div id="auth-p1" class="auth-phase">
+        <div class="field">
+          <label class="t" data-key="auth.phone_lbl"></label>
+          <input type="tel" id="auth-phone" data-ph="auth.phone_ph"
+                 onkeydown="if(event.key==='Enter')sendCode()" />
+        </div>
+        <button class="btn-primary t" id="auth-send-btn" data-key="auth.send_btn" onclick="sendCode()"></button>
+      </div>
+
+      <div id="auth-p2" class="auth-phase" style="display:none">
+        <div class="auth-sent-note">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>
+          <span class="t" data-key="auth.sent_note"></span>&nbsp;<strong id="auth-sent-phone"></strong>
+        </div>
+
+        <div class="field">
+          <label class="t" data-key="auth.code_lbl"></label>
+          <input type="text" id="auth-code" class="otp-input" maxlength="7" placeholder="·····"
+                 oninput="this.value=this.value.replace(/\D/g,'')"
+                 onkeydown="if(event.key==='Enter')verifyCode()" />
+        </div>
+
+        <div id="auth-2fa-wrap" style="display:none">
+          <div class="field" style="margin-top:4px;">
+            <label class="t" data-key="auth.pass_lbl"></label>
+            <input type="password" id="auth-password" data-ph="auth.pass_ph"
+                   onkeydown="if(event.key==='Enter')verifyCode()" />
+          </div>
+        </div>
+
+        <div id="auth-error" class="auth-error" style="display:none"></div>
+
+        <button class="btn-primary t" id="auth-confirm-btn" data-key="auth.confirm_btn" onclick="verifyCode()"></button>
+        <button class="link-btn t" data-key="auth.change_phone" onclick="resetAuth()" style="margin-top:10px;"></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ s4 — Config + Chat Picker ═══ -->
+  <div class="screen" id="s4">
+    <div class="card" style="max-width:520px;">
+      <h2 class="screen-title t" data-key="cfg.title" style="margin-bottom:20px;"></h2>
+
+      <div class="field" style="margin-bottom:10px;">
+        <label class="t" data-key="cfg.chat_lbl"></label>
+        <div class="cp-box" id="cp-loading">
+          <div class="cp-loading"><span class="spin"></span><span class="t" data-key="cfg.loading"></span></div>
+        </div>
+        <div id="cp-error" style="display:none;">
+          <div class="cp-box">
+            <div class="cp-err-msg" id="cp-err-msg"></div>
+            <div style="padding:0 14px 12px;"><input type="text" id="chat-manual" data-ph="cfg.chat_ph" /></div>
+          </div>
+        </div>
+        <div class="cp-box" id="cp-loaded" style="display:none;">
+          <div class="cp-search-row">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <input type="text" id="chat-search" class="cp-search-input" data-ph="cfg.search_ph" oninput="filterChats()" />
+          </div>
+          <div id="chat-list" class="chat-list"></div>
+        </div>
+      </div>
+
+      <div id="cp-sel-bar" class="cp-sel-bar" style="display:none;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" style="flex-shrink:0"><path d="M20 6 9 17l-5-5"/></svg>
+        <span class="cp-sel-label t" data-key="cfg.selected"></span>
+        <span class="cp-sel-name"></span>
+        <button class="cp-change-btn t" data-key="cfg.change" onclick="reopenPicker()"></button>
+      </div>
+
+      <div class="field">
+        <label class="t" data-key="cfg.folder_lbl"></label>
+        <div class="folder-row">
+          <input type="text" id="output_dir" data-ph="cfg.folder_ph" />
+          <button class="btn-browse t" data-key="cfg.browse" onclick="browseFolder()"></button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="field">
+          <label class="t" data-key="cfg.limit_lbl"></label>
+          <input type="number" id="limit" data-ph="cfg.limit_ph" min="1" />
+        </div>
+        <div class="field" style="flex:2;">
+          <label class="t" data-key="cfg.date_lbl"></label>
+          <div class="date-range">
+            <div class="dr-part" id="dr-from" onclick="openCal('from')">
+              <svg class="dr-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              <span class="dr-label ph t" id="dr-from-txt" data-key="cfg.date_from"></span>
+            </div>
+            <div class="dr-divider"></div>
+            <div class="dr-part" id="dr-to" onclick="openCal('to')">
+              <svg class="dr-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+              <span class="dr-label ph t" id="dr-to-txt" data-key="cfg.date_to"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="toggles">
+        <button class="tgl-btn on" id="tgl-photos" onclick="toggleMedia('photos')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z"/></svg>
+          <span class="t" data-key="cfg.photos"></span>
+        </button>
+        <button class="tgl-btn on" id="tgl-videos" onclick="toggleMedia('videos')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/></svg>
+          <span class="t" data-key="cfg.videos"></span>
+        </button>
+        <button class="tgl-btn" id="tgl-rounds" onclick="toggleMedia('rounds')">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><polygon points="10,8 16,12 10,16" fill="var(--bg)"/></svg>
+          <span class="t" data-key="cfg.rounds"></span>
+        </button>
+      </div>
+
+      <button class="btn-primary t" id="btn-start" data-key="cfg.start" onclick="startDownload()"></button>
+      <button class="link-btn t" data-key="cfg.keys" onclick="goTo(2)"></button>
+    </div>
+  </div>
+
+  <!-- ═══ s5 — Progress ═══ -->
+  <div class="screen" id="s5">
+    <div class="card" style="max-width:520px;">
+      <h2 class="screen-title" id="prog-title" style="margin-bottom:18px;"></h2>
+      <div class="prog-stats">
+        <div class="stat"><div class="stat-val" id="stat-dl">0</div><div class="stat-lbl t" data-key="prog.downloaded"></div></div>
+        <div class="stat"><div class="stat-val" id="stat-sk">0</div><div class="stat-lbl t" data-key="prog.skipped"></div></div>
+        <div class="stat"><div class="stat-val" id="stat-total">—</div><div class="stat-lbl t" data-key="prog.total"></div></div>
+      </div>
+      <div class="prog-bar-box" id="prog-bar-box" style="display:none;">
+        <div class="prog-bar-meta">
+          <span id="prog-bar-lbl"></span>
+          <span id="prog-bar-frac">0 / 0</span>
+        </div>
+        <div class="prog-bar-track"><div class="prog-bar-fill" id="prog-bar-fill"></div></div>
+      </div>
+      <div id="log"></div>
+      <div id="scan-hint">
+        <svg class="sh-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 3h14M5 21h14M7 3v4l4 4-4 4v4M17 3v4l-4 4 4 4v4"/>
+        </svg>
+        <div class="sh-body">
+          <div class="sh-main" style="margin-bottom:6px;font-size:12px;opacity:.6;" id="scan-chat-name"></div>
+          <div class="sh-main t" data-key="prog.hint_main"></div>
+          <div class="sh-sub  t" data-key="prog.hint_api"></div>
+        </div>
+      </div>
+      <div id="finish-box"><span id="finish-msg"></span><div id="finish-path"></div></div>
+      <button class="btn-danger t"  id="btn-stop" data-key="prog.stop"  onclick="stopDownload()"></button>
+      <button class="btn-outline t" id="btn-more" data-key="prog.more"  onclick="goTo(4)" style="display:none;margin-top:9px;"></button>
+    </div>
+  </div>
+
+  <!-- ═══ Calendar popup ═══ -->
+  <div class="cal-popup" id="cal-popup" style="display:none;">
+    <div class="cal-head">
+      <button class="cal-arrow" onclick="calMove(-1)">‹</button>
+      <span class="cal-title" id="cal-title"></span>
+      <button class="cal-arrow" onclick="calMove(1)">›</button>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+    <div class="cal-foot">
+      <button class="cal-reset" onclick="calClear()"><span class="t" data-key="cfg.date_clear"></span></button>
+      <button class="cal-ok"    onclick="calDone()"><span class="t" data-key="cfg.date_ok"></span></button>
+    </div>
+  </div>
+
+</div>
+<script>
+const T = {
+  ru: {
+    'init.connecting': 'Подключение к Telegram…',
+    'welcome.title':   'Telegram Media Downloader',
+    'welcome.desc':    'Скачивает все фото и видео из любого Telegram‑чата прямо на ваш компьютер',
+    'welcome.start':   'Начать',
+    'welcome.skip':    'Уже есть API‑ключи — пропустить →',
+    'nav.back':        'Назад',
+    'nav.home':        '← Начало',
+    'guide.title': 'Шаг 1 — Получение API‑ключей',
+    'guide.desc':  'Нужно сделать один раз. Telegram требует регистрации приложения — это бесплатно.',
+    'guide.note':  'Это не даёт никому доступ к вашему аккаунту — только ID вашего приложения',
+    'g1t':'Нажмите «Открыть my.telegram.org» ниже','g1d':'Откроется официальный портал разработчиков Telegram',
+    'g2t':'Войдите по номеру телефона','g2d':'Введите номер с кодом страны (+7...) и код подтверждения из Telegram',
+    'g3t':'Нажмите «API development tools»','g3d':'Ссылка появится на главной странице после входа',
+    'g4t':'Создайте приложение','g4d':'Введите любое название (например MyApp) — платформа неважна',
+    'g5t':'Скопируйте api_id и api_hash','g5d':'Вы увидите число (api_id) и длинную строку (api_hash) — скопируйте оба',
+    'guide.open': 'Открыть my.telegram.org',
+    'guide.next': 'У меня есть ключи — продолжить →',
+    'creds.title':   'Шаг 2 — Введите API‑ключи',
+    'creds.desc':    'Вставьте скопированные данные. Они сохранятся на компьютере.',
+    'creds.id_lbl':  'App api_id', 'creds.id_ph': '12345678',
+    'creds.hash_lbl':'App api_hash', 'creds.hash_ph': '0123456789abcdef…',
+    'creds.saved':   'Хранится только на вашем компьютере',
+    'creds.next':    'Сохранить и продолжить →',
+    'auth.title':        'Шаг 3 — Подтверждение',
+    'auth.desc':         'Telegram пришлёт код на ваш аккаунт. Это нужно сделать один раз.',
+    'auth.phone_lbl':    'Номер телефона',
+    'auth.phone_ph':     '+7 999 123 45 67',
+    'auth.send_btn':     'Получить код →',
+    'auth.sent_note':    'Код отправлен в Telegram на',
+    'auth.code_lbl':     'Код из Telegram',
+    'auth.pass_lbl':     'Пароль двухфакторной авторизации',
+    'auth.pass_ph':      'Ваш 2FA пароль',
+    'auth.confirm_btn':  'Подтвердить →',
+    'auth.change_phone': '← Изменить номер',
+    'auth.sending':      'Отправляем…',
+    'auth.confirming':   'Проверяем…',
+    'auth.2fa_msg':      'Включена двухфакторная авторизация. Введите пароль.',
+    'cfg.title':      'Настройте загрузку',
+    'cfg.chat_lbl':   'Чат',
+    'cfg.loading':    'Загрузка ваших чатов…',
+    'cfg.search_ph':  'Поиск по названию или @username…',
+    'cfg.no_chats':   'Чаты не найдены',
+    'cfg.selected':   'Выбран:',
+    'cfg.folder_lbl': 'Папка',
+    'cfg.folder_ph':  'downloads',
+    'cfg.browse':     'Выбрать…',
+    'cfg.limit_lbl':  'Лимит',
+    'cfg.limit_ph':   'Все',
+    'cfg.date_lbl':   'Период',
+    'cfg.date_from':  'С даты',
+    'cfg.date_to':    'По дату',
+    'cfg.date_clear': 'Сбросить',
+    'cfg.date_ok':    'Готово',
+    'cfg.photos':     'Фото', 'cfg.videos': 'Видео', 'cfg.rounds': 'Кружочки',
+    'cfg.start':      'Начать загрузку',
+    'cfg.keys':       'Изменить API‑ключи',
+    'cfg.chat_ph':    '@username или числовой ID',
+    'cfg.change':     'Изменить',
+    'prog.title':      'Загрузка…',
+    'prog.downloaded': 'Скачано', 'prog.skipped': 'Пропущено', 'prog.total': 'Найдено',
+    'prog.stop':       'Остановить',
+    'prog.done':       '✓ Загрузка завершена',
+    'prog.folder':     'Файлы сохранены:',
+    'prog.more':       'Скачать ещё один чат',
+    'prog.stopped':    'Остановлено.',
+    'prog.summary':    'Готово: скачано {dl}, пропущено {sk}, всего {total}.',
+    'prog.no_media':   'Медиафайлы не найдены.',
+    'prog.hint_main':  'Большие чаты сканируются долго — просто ждите, всё идёт.',
+    'prog.hint_api':   'Счётчик может иногда замереть — это особенности Telegram API, не пугайтесь.',
+    'err.no_chat':     'Выберите чат из списка',
+    'err.no_creds':    'Сначала введите API‑ключи',
+  },
+  en: {
+    'init.connecting': 'Connecting to Telegram…',
+    'welcome.title':   'Telegram Media Downloader',
+    'welcome.desc':    'Download all photos and videos from any Telegram chat directly to your computer',
+    'welcome.start':   'Get Started',
+    'welcome.skip':    'Already have API keys — skip →',
+    'nav.back':        'Back',
+    'nav.home':        '← Home',
+    'guide.title': 'Step 1 — Get API Keys',
+    'guide.desc':  "One-time setup. Telegram requires registering an app — it's free.",
+    'guide.note':  "This doesn't give anyone access to your account — it's just an app ID",
+    'g1t':'Click "Open my.telegram.org" below','g1d':'Opens the official Telegram developer portal',
+    'g2t':'Log in with your phone number','g2d':'Enter your number with country code (e.g. +1...) and the code from Telegram',
+    'g3t':'Click "API development tools"','g3d':'This link appears on the main page after logging in',
+    'g4t':'Create an application','g4d':"Fill in any App title (e.g. MyApp) — platform doesn't matter",
+    'g5t':'Copy api_id and api_hash','g5d':'You\'ll see a number (api_id) and a long string (api_hash) — copy both',
+    'guide.open': 'Open my.telegram.org',
+    'guide.next': 'I have the keys — continue →',
+    'creds.title':   'Step 2 — Enter API Keys',
+    'creds.desc':    "Paste the credentials you copied. They'll be saved locally.",
+    'creds.id_lbl':  'App api_id', 'creds.id_ph': '12345678',
+    'creds.hash_lbl':'App api_hash', 'creds.hash_ph': '0123456789abcdef…',
+    'creds.saved':   'Stored only on your computer',
+    'creds.next':    'Save & Continue →',
+    'auth.title':        'Step 3 — Confirm Identity',
+    'auth.desc':         "Telegram will send a code to your account. You'll only need to do this once.",
+    'auth.phone_lbl':    'Phone Number',
+    'auth.phone_ph':     '+1 555 123 4567',
+    'auth.send_btn':     'Send Code →',
+    'auth.sent_note':    'Code sent to Telegram for',
+    'auth.code_lbl':     'Code from Telegram',
+    'auth.pass_lbl':     'Two-Factor Authentication Password',
+    'auth.pass_ph':      'Your 2FA password',
+    'auth.confirm_btn':  'Confirm →',
+    'auth.change_phone': '← Change number',
+    'auth.sending':      'Sending…',
+    'auth.confirming':   'Verifying…',
+    'auth.2fa_msg':      'Two-factor authentication is enabled. Enter your password.',
+    'cfg.title':      'Set Up Download',
+    'cfg.chat_lbl':   'Chat',
+    'cfg.loading':    'Loading your chats…',
+    'cfg.search_ph':  'Search by name or @username…',
+    'cfg.no_chats':   'No chats found',
+    'cfg.selected':   'Selected:',
+    'cfg.folder_lbl': 'Folder',
+    'cfg.folder_ph':  'downloads',
+    'cfg.browse':     'Browse…',
+    'cfg.limit_lbl':  'Limit',
+    'cfg.limit_ph':   'All',
+    'cfg.date_lbl':   'Date range',
+    'cfg.date_from':  'From date',
+    'cfg.date_to':    'To date',
+    'cfg.date_clear': 'Clear',
+    'cfg.date_ok':    'Done',
+    'cfg.photos':     'Photos', 'cfg.videos': 'Videos', 'cfg.rounds': 'Circles',
+    'cfg.start':      'Start Download',
+    'cfg.keys':       'Change API keys',
+    'cfg.chat_ph':    '@username or numeric ID',
+    'cfg.change':     'Change',
+    'prog.title':      'Downloading…',
+    'prog.downloaded': 'Downloaded', 'prog.skipped': 'Skipped', 'prog.total': 'Found',
+    'prog.stop':       'Stop',
+    'prog.done':       '✓ Download Complete',
+    'prog.folder':     'Files saved to:',
+    'prog.more':       'Download Another Chat',
+    'prog.stopped':    'Stopped.',
+    'prog.summary':    'Done: downloaded {dl}, skipped {sk}, total {total}.',
+    'prog.no_media':   'No media files found.',
+    'prog.hint_main':  'Large chats take a while to scan — just hang tight.',
+    'prog.hint_api':   'The counter may pause sometimes — that\'s just the Telegram API being quirky, everything is fine.',
+    'err.no_chat':     'Please select a chat from the list',
+    'err.no_creds':    'Enter API keys first',
+  }
+};
+
+let lang = 'ru';
+let cur  = 0;
+const media = { photos: true, videos: true, rounds: false };
+let sse = null;
+let allChats    = [];
+let selectedChat = null;
+let chatsLoaded  = false;
+
+/* ── Dots timer ── */
+let _dotsTimer = null;
+
+/* ── Scan state ── */
+let _scanChatName = null;
+function _updateScanTitle() {
+  if (!_scanChatName) return;
+  document.getElementById('prog-title').textContent =
+    (lang === 'ru' ? 'Сканирование…' : 'Scanning…');
+  const chatEl = document.getElementById('scan-chat-name');
+  if (chatEl) chatEl.textContent = _scanChatName;
+}
+
+/* ── Date range picker ── */
+let _dateFrom = null, _dateTo = null;
+let _calTarget = 'from', _calYear = 0, _calMonth = 0;
+
+const MO_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const MO_EN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const DW_RU = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+const DW_EN = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+
+function isoDate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+function fmtDate(d) {
+  if (!d) return '';
+  return d.toLocaleDateString(lang === 'ru' ? 'ru-RU' : 'en-GB', {day:'numeric', month:'short', year:'numeric'});
+}
+function sameDay(a, b) { return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+
+function openCal(target) {
+  _calTarget = target;
+  const ref = target === 'from' ? (_dateFrom || new Date()) : (_dateTo || new Date());
+  _calYear  = ref.getFullYear();
+  _calMonth = ref.getMonth();
+  const el = document.getElementById('dr-' + target);
+  const rect = el.getBoundingClientRect();
+  const pop  = document.getElementById('cal-popup');
+  pop.style.left = Math.min(rect.left, window.innerWidth - 268) + 'px';
+  pop.style.top  = (rect.bottom + 6) + 'px';
+  pop.style.display = '';
+  document.getElementById('dr-from').classList.toggle('dr-on', target === 'from');
+  document.getElementById('dr-to').classList.toggle('dr-on', target === 'to');
+  renderCal();
+  setTimeout(() => document.addEventListener('click', _calOutside, {once:true}), 0);
+}
+
+function _calOutside(e) {
+  const pop = document.getElementById('cal-popup');
+  if (pop.contains(e.target) || e.target.closest('.dr-part')) {
+    setTimeout(() => document.addEventListener('click', _calOutside, {once:true}), 0);
+    return;
+  }
+  closeCal();
+}
+
+function closeCal() {
+  document.getElementById('cal-popup').style.display = 'none';
+  document.getElementById('dr-from').classList.remove('dr-on');
+  document.getElementById('dr-to').classList.remove('dr-on');
+}
+
+function calMove(d) {
+  _calMonth += d;
+  if (_calMonth > 11) { _calMonth = 0;  _calYear++; }
+  if (_calMonth < 0)  { _calMonth = 11; _calYear--; }
+  renderCal();
+}
+
+function renderCal() {
+  const mos = lang === 'ru' ? MO_RU : MO_EN;
+  const dws = lang === 'ru' ? DW_RU : DW_EN;
+  document.getElementById('cal-title').textContent = mos[_calMonth] + ' ' + _calYear;
+
+  const today   = new Date();
+  const first   = new Date(_calYear, _calMonth, 1).getDay();  // 0=Sun
+  const offset  = (first + 6) % 7;                            // Monday-first
+  const daysIn  = new Date(_calYear, _calMonth + 1, 0).getDate();
+
+  let html = dws.map(d => `<div class="cal-dow">${d}</div>`).join('');
+  for (let i = 0; i < offset; i++) html += '<div class="cal-d cal-empty"></div>';
+
+  for (let n = 1; n <= daysIn; n++) {
+    const date = new Date(_calYear, _calMonth, n);
+    const isFrom = sameDay(date, _dateFrom);
+    const isTo   = sameDay(date, _dateTo);
+    const inRng  = _dateFrom && _dateTo && date > _dateFrom && date < _dateTo;
+    const isTod  = sameDay(date, today);
+    let cls = 'cal-d';
+    if (isFrom && _dateTo) cls += ' cal-rs';
+    else if (isTo && _dateFrom) cls += ' cal-re';
+    else if (isFrom || isTo) cls += ' cal-sel';
+    else if (inRng) cls += ' cal-in';
+    if (isTod && !isFrom && !isTo) cls += ' cal-today';
+    html += `<div class="${cls}" onclick="calPick(${n})">${n}</div>`;
+  }
+  document.getElementById('cal-grid').innerHTML = html;
+}
+
+function calPick(n) {
+  const date = new Date(_calYear, _calMonth, n);
+  if (_calTarget === 'from') {
+    _dateFrom = date;
+    if (_dateTo && _dateFrom > _dateTo) _dateTo = null;
+  } else {
+    _dateTo = date;
+    if (_dateFrom && _dateTo < _dateFrom) _dateFrom = null;
+  }
+  updateDateLabels();
+  renderCal();
+  // auto-switch to other field if empty
+  if (_calTarget === 'from' && !_dateTo) { _calTarget = 'to'; document.getElementById('dr-from').classList.remove('dr-on'); document.getElementById('dr-to').classList.add('dr-on'); renderCal(); }
+  else if (_calTarget === 'to' && !_dateFrom) { _calTarget = 'from'; document.getElementById('dr-to').classList.remove('dr-on'); document.getElementById('dr-from').classList.add('dr-on'); renderCal(); }
+  else closeCal();
+}
+
+function calClear() {
+  if (_calTarget === 'from') _dateFrom = null;
+  else _dateTo = null;
+  updateDateLabels();
+  renderCal();
+}
+
+function calDone() { closeCal(); }
+
+function updateDateLabels() {
+  const fEl = document.getElementById('dr-from-txt');
+  const tEl = document.getElementById('dr-to-txt');
+  if (_dateFrom) { fEl.textContent = fmtDate(_dateFrom); fEl.className = 'dr-label val'; delete fEl.dataset.key; }
+  else           { fEl.textContent = t('cfg.date_from'); fEl.className = 'dr-label ph t'; fEl.dataset.key = 'cfg.date_from'; }
+  if (_dateTo)   { tEl.textContent = fmtDate(_dateTo);   tEl.className = 'dr-label val'; delete tEl.dataset.key; }
+  else           { tEl.textContent = t('cfg.date_to');   tEl.className = 'dr-label ph t'; tEl.dataset.key = 'cfg.date_to'; }
+}
+
+const t = k => T[lang][k] || k;
+
+function applyLang() {
+  document.querySelectorAll('[data-key]').forEach(el => el.textContent = t(el.dataset.key));
+  document.querySelectorAll('[data-ph]').forEach(el  => el.placeholder  = t(el.dataset.ph));
+}
+
+function setLang(l) {
+  if (l === lang) return;
+  document.getElementById('app').classList.add('lang-out');
+  setTimeout(() => {
+    lang = l;
+    applyLang();
+    document.getElementById('app').classList.remove('lang-out');
+    document.getElementById('btn-ru').classList.toggle('active', l === 'ru');
+    document.getElementById('btn-en').classList.toggle('active', l === 'en');
+    if (cur === 5) document.getElementById('prog-title').textContent = t('prog.title');
+    if (chatsLoaded) renderChats(filterList());
+    updateDateLabels();
+    _updateScanTitle();
+  }, 150);
+}
+
+function goTo(idx) {
+  const fwd = idx > cur;
+  document.getElementById('s' + cur).classList.remove('active');
+  document.getElementById('s' + cur).classList.toggle('past', fwd);
+  const next = document.getElementById('s' + idx);
+  next.classList.remove('past');
+  next.classList.add('active');
+  cur = idx;
+  updateDots();
+  document.getElementById('btn-home').style.display = idx >= 4 ? 'flex' : 'none';
+  document.getElementById('social-fixed').style.display = idx === 0 ? 'none' : 'flex';
+  if (idx === 3) resetAuth();
+  if (idx === 4) loadChats();
+}
+function next() { goTo(cur + 1); }
+function prev() { goTo(cur - 1); }
+
+async function goHome() {
+  if (sse) {
+    await fetch('/stop', { method: 'POST' }).catch(() => {});
+    sse.close();
+    sse = null;
+  }
+  goTo(0);
+}
+
+function updateDots() {
+  const el = document.getElementById('dots');
+  el.classList.toggle('visible', cur >= 1 && cur <= 4);
+  [0,1,2].forEach(i => {
+    const d = document.getElementById('dot-' + i), si = i + 1;
+    const active = si === cur || (i === 2 && cur === 4);
+    d.classList.toggle('active', active);
+    d.classList.toggle('done',   si < cur && !active);
+  });
+}
+
+async function saveCreds() {
+  const id   = document.getElementById('api_id').value.trim();
+  const hash = document.getElementById('api_hash').value.trim();
+  if (!id || !hash) { alert(lang === 'ru' ? 'Заполните оба поля' : 'Fill in both fields'); return; }
+
+  const btn = document.getElementById('creds-next-btn');
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin" style="border-top-color:#fff"></span>`;
+
+  await fetch('/save-creds', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ api_id: id, api_hash: hash })
+  });
+
+  const res  = await fetch('/auth/status');
+  const data = await res.json();
+
+  btn.disabled = false;
+  btn.textContent = t('creds.next');
+  chatsLoaded  = false;
+  selectedChat = null;
+
+  if (data.authenticated) { goTo(4); }
+  else                     { goTo(3); }
+}
+
+function resetAuth() {
+  document.getElementById('auth-p1').style.display = '';
+  document.getElementById('auth-p2').style.display = 'none';
+  document.getElementById('auth-error').style.display = 'none';
+  document.getElementById('auth-2fa-wrap').style.display = 'none';
+  document.getElementById('auth-code').value = '';
+  if (document.getElementById('auth-password'))
+    document.getElementById('auth-password').value = '';
+  const btn = document.getElementById('auth-send-btn');
+  btn.disabled = false;
+  btn.textContent = t('auth.send_btn');
+}
+
+async function sendCode() {
+  const phone = document.getElementById('auth-phone').value.trim();
+  if (!phone) { alert(lang === 'ru' ? 'Введите номер телефона' : 'Enter your phone number'); return; }
+
+  const btn = document.getElementById('auth-send-btn');
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin" style="border-top-color:#fff"></span> ${t('auth.sending')}`;
+
+  const res  = await fetch('/auth/send-code', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ phone })
+  });
+  const data = await res.json();
+
+  if (!data.ok) {
+    btn.disabled = false;
+    btn.textContent = t('auth.send_btn');
+    showAuthError(data.error);
+    return;
+  }
+
+  document.getElementById('auth-sent-phone').textContent = phone;
+  document.getElementById('auth-p1').style.display = 'none';
+  document.getElementById('auth-p2').style.display = '';
+  setTimeout(() => document.getElementById('auth-code').focus(), 50);
+}
+
+async function verifyCode() {
+  const code     = document.getElementById('auth-code').value.trim();
+  const password = document.getElementById('auth-password')?.value.trim() || '';
+  if (!code) { alert(lang === 'ru' ? 'Введите код' : 'Enter the code'); return; }
+
+  const btn = document.getElementById('auth-confirm-btn');
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin" style="border-top-color:#fff"></span> ${t('auth.confirming')}`;
+
+  const res  = await fetch('/auth/verify-code', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ code, password })
+  });
+  const data = await res.json();
+
+  btn.disabled = false;
+  btn.textContent = t('auth.confirm_btn');
+
+  if (data.needs_2fa) {
+    document.getElementById('auth-2fa-wrap').style.display = '';
+    showAuthError(t('auth.2fa_msg'));
+    setTimeout(() => document.getElementById('auth-password')?.focus(), 50);
+    return;
+  }
+
+  if (!data.ok) { showAuthError(data.error); return; }
+
+  goTo(4);
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  el.textContent = msg;
+  el.style.display = '';
+}
+
+function toggleMedia(type) {
+  media[type] = !media[type];
+  document.getElementById('tgl-' + type).classList.toggle('on', media[type]);
+}
+
+async function browseFolder() {
+  const res  = await fetch('/browse-folder');
+  const data = await res.json();
+  if (data.ok && data.path) {
+    document.getElementById('output_dir').value = data.path;
+  }
+}
+
+const AV_COLORS =['#e8397c','#2ca5e0','#7c4dff','#00bcd4','#e55722','#4caf50','#e09422','#795548','#607d8b','#9c27b0'];
+
+function avatarColor(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffff;
+  return AV_COLORS[h % AV_COLORS.length];
+}
+
+function kindIcon(kind) {
+  const ops = 'fill="currentColor" opacity=".5"';
+  if (kind === 'channel')
+    return `<svg width="14" height="14" viewBox="0 0 24 24" ${ops}><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H5.17L4 17.17V4h16v12z"/></svg>`;
+  if (kind === 'group')
+    return `<svg width="14" height="14" viewBox="0 0 24 24" ${ops}><path d="M16 11c1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 3-1.34 3-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>`;
+  return `<svg width="14" height="14" viewBox="0 0 24 24" ${ops}><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`;
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function filterList() {
+  const q = (document.getElementById('chat-search')?.value || '').toLowerCase().trim();
+  return q ? allChats.filter(c =>
+    (c.name || '').toLowerCase().includes(q) ||
+    (c.username && c.username.toLowerCase().includes(q))
+  ) : allChats;
+}
+
+function renderChats(chats) {
+  const list = document.getElementById('chat-list');
+  if (!chats.length) {
+    list.innerHTML = `<div class="chat-empty">${esc(t('cfg.no_chats'))}</div>`;
+    return;
+  }
+  list.innerHTML = chats.map(ch => {
+    const letter = (ch.name || '?').charAt(0).toUpperCase();
+    const color  = avatarColor(ch.name || '');
+    const sel    = selectedChat === ch.id;
+    const meta   = ch.username ? '@' + ch.username : '';
+    const imgTag = ch.has_photo
+      ? `<img src="/chat-photo/${ch.id}" alt="" loading="lazy" onerror="this.remove()">`
+      : '';
+    return `<div class="chat-item${sel ? ' selected' : ''}" data-id="${ch.id}">
+      <div class="chat-av" style="background:${color}">
+        ${imgTag}
+        <span class="chat-av-letter">${letter}</span>
+      </div>
+      <div class="chat-info">
+        <div class="ci-name">${esc(ch.name)}</div>
+        ${meta ? `<div class="ci-meta">${esc(meta)}</div>` : ''}
+      </div>
+      <div class="chat-kind">${kindIcon(ch.kind)}</div>
+      ${sel ? `<svg class="chat-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M20 6 9 17l-5-5"/></svg>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function filterChats() { renderChats(filterList()); }
+
+document.addEventListener('click', e => {
+  const item = e.target.closest('.chat-item');
+  if (!item) return;
+  const id   = parseInt(item.dataset.id);
+  const chat = allChats.find(c => c.id === id);
+  if (!chat) return;
+  selectedChat = id;
+
+  document.getElementById('cp-loaded').style.display = 'none';
+  const bar = document.getElementById('cp-sel-bar');
+  bar.style.display = 'flex';
+  bar.querySelector('.cp-sel-name').textContent = chat.name;
+
+  renderChats(filterList());
+});
+
+function reopenPicker() {
+  document.getElementById('cp-sel-bar').style.display = 'none';
+  document.getElementById('cp-loaded').style.display  = '';
+  setTimeout(() => document.getElementById('chat-search')?.focus(), 50);
+}
+
+async function loadChats() {
+  if (chatsLoaded) return;
+  document.getElementById('cp-loading').style.display = '';
+  document.getElementById('cp-error').style.display   = 'none';
+  document.getElementById('cp-loaded').style.display  = 'none';
+  document.getElementById('cp-sel-bar').style.display = 'none';
+
+  try {
+    const res  = await fetch('/chats');
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    allChats    = data.chats;
+    chatsLoaded = true;
+    renderChats(allChats);
+    document.getElementById('cp-loading').style.display = 'none';
+    document.getElementById('cp-loaded').style.display  = '';
+  } catch (e) {
+    document.getElementById('cp-loading').style.display = 'none';
+    document.getElementById('cp-error').style.display   = '';
+    document.getElementById('cp-err-msg').textContent   =
+      (lang === 'ru' ? 'Не удалось загрузить чаты: ' : 'Could not load chats: ') + e.message;
+  }
+}
+
+async function startDownload() {
+  let chat;
+  if (selectedChat !== null) {
+    chat = String(selectedChat);
+  } else {
+    const manual = document.getElementById('chat-manual');
+    chat = manual ? manual.value.trim() : '';
+  }
+
+  const outDir   = document.getElementById('output_dir').value.trim() || 'downloads';
+  const limit    = document.getElementById('limit').value.trim();
+  const date_from  = _dateFrom ? isoDate(_dateFrom) : null;
+  const date_to    = _dateTo   ? isoDate(_dateTo)   : null;
+  const tz_offset  = new Date().getTimezoneOffset(); // minutes, negative for UTC+
+  const api_id   = document.getElementById('api_id').value.trim();
+  const api_hash = document.getElementById('api_hash').value.trim();
+
+  if (!chat)               { alert(t('err.no_chat'));  return; }
+  if (!api_id || !api_hash){ alert(t('err.no_creds')); goTo(2); return; }
+
+  goTo(5);
+  document.getElementById('prog-title').textContent = t('prog.title');
+  document.getElementById('finish-box').classList.remove('visible');
+  document.getElementById('btn-stop').style.display = '';
+  document.getElementById('btn-more').style.display = 'none';
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('stat-dl').textContent = '0';
+  document.getElementById('stat-sk').textContent = '0';
+  document.getElementById('stat-total').textContent = '—';
+  document.getElementById('prog-bar-box').style.display = 'none';
+  document.getElementById('prog-bar-fill').style.width = '0';
+  document.getElementById('scan-hint').classList.add('visible');
+  _scanChatName = null;
+  let dlCount = 0, skCount = 0, totalFound = 0;
+  let _scanEl = null;
+
+  const res  = await fetch('/start', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ api_id, api_hash, chat, output_dir: outDir,
+      photos: media.photos, videos: media.videos, rounds: media.rounds, limit: limit || null,
+      date_from, date_to, tz_offset })
+  });
+  const data = await res.json();
+  if (!data.ok) { addLog('✗ ' + data.error, 'err'); return; }
+
+  const _dlEls = new Map();
+
+  sse = new EventSource('/stream');
+  sse.onmessage = e => {
+    const ev = JSON.parse(e.data);
+    if (ev.type === 'ping') return;
+    if (ev.type === 'chat_name') {
+      _scanChatName = ev.name;
+      _updateScanTitle();
+      return;
+    }
+    if (ev.type === 'scanning') {
+      const msg = lang === 'ru'
+        ? `🔍 ${ev.scanned} сообщений, найдено ${ev.found}`
+        : `🔍 ${ev.scanned} messages, found ${ev.found}`;
+      if (_scanEl) { _scanEl.textContent = msg; }
+      else { _scanEl = addLog(msg, 'info'); }
+      return;
+    }
+    if (ev.type === 'scan') {
+      if (_scanEl) { _scanEl.remove(); _scanEl = null; }
+      totalFound = ev.total;
+      document.getElementById('stat-total').textContent = ev.total;
+      document.getElementById('prog-title').textContent = t('prog.title');
+      const box = document.getElementById('prog-bar-box');
+      box.style.display = ev.total > 0 ? '' : 'none';
+      document.getElementById('prog-bar-lbl').textContent =
+        (lang === 'ru' ? `Фото: ${ev.photos}  Видео: ${ev.videos}` : `Photos: ${ev.photos}  Videos: ${ev.videos}`);
+      document.getElementById('prog-bar-frac').textContent = `0 / ${ev.total}`;
+    }
+    else if (ev.type === 'done') {
+      dlCount = ev.count;
+      document.getElementById('stat-dl').textContent = dlCount;
+      if (totalFound > 0) {
+        const pct = Math.round(ev.count * 100 / ev.total);
+        document.getElementById('prog-bar-fill').style.width = pct + '%';
+        document.getElementById('prog-bar-frac').textContent = `${ev.count} / ${ev.total}`;
+      }
+      const el = _dlEls.get(ev.msg);
+      if (el) { el.textContent = '✓ ' + ev.msg + ' (' + ev.size + ' KB)'; el.className = 'log-line done'; _dlEls.delete(ev.msg); }
+      else addLog('✓ ' + ev.msg + ' (' + ev.size + ' KB)', 'done');
+    }
+    else if (ev.type === 'skip')  {
+      skCount++;
+      document.getElementById('stat-sk').textContent = skCount;
+      addLog('⊘ ' + ev.msg, 'info');
+    }
+    else if (ev.type === 'progress') {
+      const el = addLog('↓ ' + ev.msg + '  …', 'prog');
+      _dlEls.set(ev.msg, el);
+    }
+    else if (ev.type === 'dl_progress') {
+      const el = _dlEls.get(ev.msg);
+      if (el) { el.textContent = '↓ ' + ev.msg + '  ' + ev.pct + '%'; el.classList.add('has-pct'); }
+    }
+    else if (ev.type === 'info')  addLog(ev.msg, 'info');
+    else if (ev.type === 'error') { _dlEls.delete(ev.msg.split(':')[0]); addLog('✗ ' + ev.msg, 'err'); }
+    else if (ev.type === 'finish') {
+      const finMsg = ev.no_media
+        ? t('prog.no_media')
+        : t('prog.summary').replace('{dl}', ev.dl).replace('{sk}', ev.sk).replace('{total}', ev.total);
+      addLog(finMsg, 'fin');
+      document.getElementById('scan-hint').classList.remove('visible');
+      document.getElementById('prog-title').textContent = t('prog.done');
+      document.getElementById('finish-msg').textContent  = t('prog.done');
+      document.getElementById('finish-path').textContent = t('prog.folder') + ' ' + ev.path;
+      document.getElementById('finish-box').classList.add('visible');
+      document.getElementById('btn-stop').style.display = 'none';
+      document.getElementById('btn-more').style.display = '';
+      sse.close();
+    }
+  };
+}
+
+async function stopDownload() {
+  await fetch('/stop', { method: 'POST' });
+  if (sse) sse.close();
+  document.getElementById('scan-hint').classList.remove('visible');
+  addLog(t('prog.stopped'), 'info');
+  document.getElementById('btn-stop').style.display = 'none';
+  document.getElementById('btn-more').style.display = '';
+}
+
+function addLog(text, cls) {
+  const log = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = 'log-line ' + cls;
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+const HAS_CREDS    = {{ has_creds   | tojson }};
+const INIT_API_ID  = {{ api_id      | tojson }};
+const INIT_API_HASH= {{ api_hash    | tojson }};
+
+applyLang();
+document.getElementById('api_id').value   = INIT_API_ID;
+document.getElementById('api_hash').value = INIT_API_HASH;
+
+async function initApp() {
+  if (!HAS_CREDS) return;
+
+  const overlay = document.getElementById('init-overlay');
+  overlay.style.display = 'flex';
+  document.getElementById('s0').classList.remove('active');
+
+  const res  = await fetch('/auth/status');
+  const data = await res.json();
+
+  overlay.style.opacity    = '0';
+  overlay.style.transition = 'opacity .3s';
+  setTimeout(() => { overlay.style.display = 'none'; }, 320);
+
+  document.getElementById('social-fixed').style.display = 'flex';
+  if (data.authenticated) {
+    document.getElementById('s4').classList.add('active');
+    cur = 4; updateDots(); loadChats();
+    document.getElementById('btn-home').style.display = 'flex';
+  } else {
+    document.getElementById('s3').classList.add('active');
+    cur = 3; updateDots();
+  }
+}
+
+initApp();
+</script>
+</body>
+</html>

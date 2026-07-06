@@ -1,0 +1,21 @@
+# Secrets & session
+.credentials.json
+*.session
+*.session-journal
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Downloads
+downloads/
+
+# macOS
+.DS_Store
+
+# Loose images in root (screenshots etc.) — but NOT docs/
+/*.png
+/*.jpg
+/*.jpeg
