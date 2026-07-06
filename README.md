@@ -49,8 +49,11 @@ Search for any chat from your account, pick what you want — photos, videos, ro
 | Round videos | ✅ toggle on/off |
 | GIFs | ❌ skipped |
 | Date range filter | ✅ |
+| Organize by month | ✅ files go into `YYYY-MM` subfolders |
 | Skip already downloaded | ✅ safe to re-run |
 | Parallel downloads | ✅ 3 at a time |
+
+You can sign out of your Telegram session at any time from the config screen — the session file is deleted and you'll be asked to log in again on the next download.
 
 ---
 
@@ -74,7 +77,8 @@ You can see exactly what's happening — which files are being scanned, what's d
 
 ```
 app.py                 — backend (Flask + Telethon)
-templates/index.html   — the whole UI in one file
+templates/index.html   — UI markup and JavaScript
+static/style.css       — all styles
 requirements.txt       — dependencies
 start.sh               — one-command launcher
 docs/                  — screenshots

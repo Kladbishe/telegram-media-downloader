@@ -89,7 +89,7 @@ def make_filename(message):
         ext = ".bin"
     return f"{date_str}_{message.id}{ext}"
 
-async def run_download(api_id, api_hash, chat, output_dir, dl_photos, dl_videos, dl_rounds, limit, queue, stop_event, cached_entity=None, date_from=None, date_to=None):
+async def run_download(api_id, api_hash, chat, output_dir, dl_photos, dl_videos, dl_rounds, limit, queue, stop_event, cached_entity=None, date_from=None, date_to=None, organize_by_month=False):
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -154,7 +154,10 @@ async def run_download(api_id, api_hash, chat, output_dir, dl_photos, dl_videos,
             if stop_event.is_set():
                 return
             filename = make_filename(message)
-            dest = output_path / filename
+            if organize_by_month:
+                dest = output_path / message.date.strftime("%Y-%m") / filename
+            else:
+                dest = output_path / filename
             part = Path(str(dest) + ".part")
 
             if dest.exists():
@@ -205,8 +208,8 @@ async def run_download(api_id, api_hash, chat, output_dir, dl_photos, dl_videos,
             "path": str(output_path.resolve()),
         })
 
-def download_thread(api_id, api_hash, chat, output_dir, dl_photos, dl_videos, dl_rounds, limit, queue, stop_event, cached_entity=None, date_from=None, date_to=None):
-    asyncio.run(run_download(api_id, api_hash, chat, output_dir, dl_photos, dl_videos, dl_rounds, limit, queue, stop_event, cached_entity, date_from, date_to))
+def download_thread(api_id, api_hash, chat, output_dir, dl_photos, dl_videos, dl_rounds, limit, queue, stop_event, cached_entity=None, date_from=None, date_to=None, organize_by_month=False):
+    asyncio.run(run_download(api_id, api_hash, chat, output_dir, dl_photos, dl_videos, dl_rounds, limit, queue, stop_event, cached_entity, date_from, date_to, organize_by_month))
 
 
 @app.route("/")
@@ -431,6 +434,7 @@ def start():
     dl_photos = bool(data.get("photos", True))
     dl_videos = bool(data.get("videos", True))
     dl_rounds = bool(data.get("rounds", False))
+    organize_by_month = bool(data.get("organize_by_month", False))
     limit_raw = data.get("limit", "")
     limit = int(limit_raw) if str(limit_raw).strip().isdigit() else None
     # tz_offset: JS getTimezoneOffset() — minutes, negative for UTC+
@@ -473,7 +477,7 @@ def start():
 
     threading.Thread(
         target=download_thread,
-        args=(api_id, api_hash, chat, output_dir, dl_photos, dl_videos, dl_rounds, limit, _download_queue, _stop_event, cached_entity, date_from, date_to),
+        args=(api_id, api_hash, chat, output_dir, dl_photos, dl_videos, dl_rounds, limit, _download_queue, _stop_event, cached_entity, date_from, date_to, organize_by_month),
         daemon=True,
     ).start()
     return jsonify({"ok": True})
@@ -484,6 +488,17 @@ def stop():
     global _active
     _stop_event.set()
     _active = False
+    return jsonify({"ok": True})
+
+
+@app.route("/auth/logout", methods=["POST"])
+def auth_logout():
+    global _session_str
+    _session_str = ""
+    for f in ["session.session", "session.session-journal"]:
+        p = Path(f)
+        if p.exists():
+            p.unlink()
     return jsonify({"ok": True})
 
 
