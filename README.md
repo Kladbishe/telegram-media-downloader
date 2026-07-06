@@ -4,7 +4,7 @@ Ever wanted to save all the photos and videos from a Telegram chat without click
 
 No cloud. No account. Everything stays on your machine.
 
-<img src="docs/1.png" width="700"/>
+<img src="docs/1.png" width="860"/>
 
 ---
 
@@ -24,7 +24,7 @@ That's it. It checks your Python version, installs everything it needs, and open
 
 On first launch the app walks you through getting API keys from Telegram — it takes about 2 minutes and it's completely free.
 
-<img src="docs/2.png" width="700"/>
+<img src="docs/2.png" width="860"/>
 
 The short version:
 1. Go to **https://my.telegram.org** and sign in with your phone number
@@ -40,7 +40,7 @@ You only do this once. The session is saved so you won't need to log in again.
 
 Search for any chat from your account, pick what you want — photos, videos, round videos — set a date range if needed, and go.
 
-<img src="docs/3.png" width="700"/>
+<img src="docs/3.png" width="860"/>
 
 | | |
 |---|---|
@@ -58,7 +58,7 @@ Search for any chat from your account, pick what you want — photos, videos, ro
 
 You can see exactly what's happening — which files are being scanned, what's downloading, and how far along it is.
 
-<img src="docs/4.png" width="700"/>
+<img src="docs/4.png" width="860"/>
 
 ---
 
